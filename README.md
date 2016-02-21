@@ -1,4 +1,4 @@
-[![Code Climate](https://codeclimate.com/github/JacobEvelyn/friends/badges/gpa.svg)](https://codeclimate.com/github/JacobEvelyn/friends) [![Test Coverage](https://codeclimate.com/github/JacobEvelyn/friends/badges/coverage.svg)](https://codeclimate.com/github/JacobEvelyn/friends) [![Build Status](https://travis-ci.org/JacobEvelyn/friends.svg)](https://travis-ci.org/JacobEvelyn/friends) [![Inline docs](http://inch-ci.org/github/JacobEvelyn/friends.png)](http://inch-ci.org/github/JacobEvelyn/friends) [![ghit.me](https://ghit.me/badge.svg?repo=JacobEvelyn/friends)](https://ghit.me/repo/JacobEvelyn/friends)
+[![Gem Version](https://badge.fury.io/rb/friends.svg)](https://badge.fury.io/rb/friends) [![Code Climate](https://codeclimate.com/github/JacobEvelyn/friends/badges/gpa.svg)](https://codeclimate.com/github/JacobEvelyn/friends) [![Test Coverage](https://codeclimate.com/github/JacobEvelyn/friends/badges/coverage.svg)](https://codeclimate.com/github/JacobEvelyn/friends) [![Build Status](https://travis-ci.org/JacobEvelyn/friends.svg?branch=master)](https://travis-ci.org/JacobEvelyn/friends) [![Inline docs](http://inch-ci.org/github/JacobEvelyn/friends.png)](http://inch-ci.org/github/JacobEvelyn/friends) [![ghit.me](https://ghit.me/badge.svg?repo=JacobEvelyn/friends)](https://ghit.me/repo/JacobEvelyn/friends)
 
 # Friends
 
@@ -38,7 +38,6 @@ $ gem install friends
 ### Basic commands:
 
 ##### Add a friend:
-
 ```
 $ friends add friend "Grace Hopper"
 Friend added: "Grace Hopper"
@@ -64,6 +63,29 @@ You can escape the names of friends you don't want `friends` to match with a bac
 ```
 $ friends add activity "2015-11-01: Grace and I went to \Marie's Diner. \George had to cancel at the last minute."
 Activity added: "2015-11-01: Grace Hopper and I went to Marie's Diner. George had to cancel at the last minute."
+```
+##### Set a friend's nicknames:
+```
+$ friends add nickname "Grace Hopper" "The Admiral"
+Nickname added: "Grace Hopper (a.k.a. The Admiral)
+$ friends add nickname "Grace Hopper" "Amazing Grace"
+Nickname added: "Grace Hopper (a.k.a. The Admiral a.k.a. Amazing Grace)"
+```
+Nicknames will be used to match friends in activities,
+just like formal names:
+```
+$ friends add activity "Invented debugging with Amazing Grace.""
+Activity added: "2016-01-06: Invented debugging with Amazing Grace Hopper."
+```
+And they can be removed as well:
+```
+$ friends remove nickname "Grace Hopper" "The Admiral"
+Nickname removed: "Grace Hopper (a.k.a. Amazing Grace)"
+```
+##### Change a friend's name:
+```
+$ friends rename friend "Grace Hopper" "Grace Brewster Murray Hopper"
+Name changed: "Grace Brewster Murray Hopper (a.k.a. Amazing Grace)"
 ```
 ##### Suggest a friend to do something with:
 ```
@@ -178,25 +200,23 @@ $ friends list activities --help
 ## Documentation
 
 In case you're *really* interested, we have
-[documentation](http://www.rubydoc.info/JacobEvelyn/friends).
+[documentation](http://www.rubydoc.info/github/JacobEvelyn/friends).
 
 ## Contributing
 
 If you have an idea,
 [make a GitHub Issue](https://github.com/JacobEvelyn/friends/issues/new)!
 Suggestions are very very welcome, and usually are implemented very
-quickly. And if you'd like to do the implementing yourself:
+quickly. And if you'd like to do the implementing yourself, see the
+[contributing guide](https://github.com/JacobEvelyn/friends/blob/master/CONTRIBUTING.md).
 
-1. Fork it (https://github.com/JacobEvelyn/friends/fork)
-2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am "Add some feature"`)
-4. Push to the branch (`git push origin my-new-feature`)
-5. Create a new Pull Request
+A big big thanks to all of this project's lovely
+[contributors](https://github.com/JacobEvelyn/friends/graphs/contributors)!
 
-**Make sure your changes have appropriate tests (`rake test`) and
-conform to the Rubocop style specified. This project uses
-[overcommit](https://github.com/causes/overcommit) to enforce good
-code.**
+## Code of Conduct
+
+Note that this project follows a [Code of Conduct](https://github.com/JacobEvelyn/friends/blob/master/CODE_OF_CONDUCT.md).
+If you're a polite, reasonable person you won't have any issues!
 
 ## License
 

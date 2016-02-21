@@ -1,20 +1,26 @@
-require_relative "helper"
+require "./test/helper"
 
 describe Friends::Introvert do
   # Add readers to make internal state easier to test.
-  class Friends::Introvert
-    attr_reader :filename, :activities, :friends
+  module Friends
+    class Introvert
+      attr_reader :filename, :activities, :friends
+    end
   end
 
   # Add helpers to set internal states for friends and activities.
   def stub_friends(val)
+    old_val = introvert.instance_variable_get(:@friends)
     introvert.instance_variable_set(:@friends, val)
     yield
+    introvert.instance_variable_set(:@friends, old_val)
   end
 
   def stub_activities(val)
+    old_val = introvert.instance_variable_get(:@activities)
     introvert.instance_variable_set(:@activities, val)
     yield
+    introvert.instance_variable_set(:@activities, old_val)
   end
 
   let(:filename) { "test/tmp/friends.md" }
@@ -255,6 +261,73 @@ describe Friends::Introvert do
     end
   end
 
+  describe "#rename_friend" do
+    let(:new_name) { "David Bowie" }
+    subject do
+      introvert.rename_friend(old_name: friend_names.last, new_name: new_name)
+    end
+
+    it "replaces old name within activities to the new name" do
+      stub_friends(friends) do
+        stub_activities(activities) do
+          subject
+          introvert.activities.first.description.must_include new_name
+          introvert.activities.last.description.must_include new_name
+        end
+      end
+    end
+
+    describe "when given names with leading and trailing spaces" do
+      let(:new_name) { "    David Bowie " }
+      let(:old_name) { friend_names.last + "    " }
+      subject do
+        introvert.rename_friend(old_name: old_name, new_name: new_name)
+      end
+
+      it "correctly strips the spaces" do
+        stub_friends(friends) do
+          stub_activities(activities) do
+            subject
+            introvert.activities.first.description.must_include "David Bowie"
+            introvert.activities.last.description.must_include "David Bowie"
+          end
+        end
+      end
+    end
+  end
+
+  describe "#add_nickname" do
+    subject do
+      introvert.add_nickname(name: friend_names.first, nickname: "The Dude")
+    end
+
+    # Delete the file that is created each time.
+    after { File.delete(filename) if File.exists?(filename) }
+
+    it "returns the modified friend" do
+      stub_friends(friends) do
+        subject.must_equal friends.first
+      end
+    end
+  end
+
+  describe "#remove_nickname" do
+    subject do
+      introvert.remove_nickname(name: "Jeff", nickname: "The Dude")
+    end
+
+    # Delete the file that is created each time.
+    after { File.delete(filename) if File.exists?(filename) }
+
+    it "returns the modified friend" do
+      friend = Friends::Friend.new(name: "Jeff",
+                                   nickname_str: "a.k.a. The Dude")
+      stub_friends([friend]) do
+        subject.must_equal friend
+      end
+    end
+  end
+
   describe "#list_favorites" do
     subject { introvert.list_favorites(limit: limit) }
 
@@ -296,6 +369,18 @@ describe Friends::Introvert do
             distant: ["George Washington Carver"],
             moderate: [],
             close: ["Betsy Ross"]
+          )
+        end
+      end
+    end
+
+    it "doesn't choke when there are no friends" do
+      stub_friends([]) do
+        stub_activities([]) do
+          subject.must_equal(
+            distant: [],
+            moderate: [],
+            close: []
           )
         end
       end
@@ -371,6 +456,42 @@ describe Friends::Introvert do
             subject.values.inject(:+).must_equal 2
           end
         end
+      end
+    end
+  end
+
+  describe "#total_friends" do
+    it "returns 0 when there are no friends" do
+      introvert.total_friends.must_equal 0
+    end
+
+    it "returns the total number of friends" do
+      stub_friends(friends) do
+        introvert.total_friends.must_equal friends.size
+      end
+    end
+  end
+
+  describe "#total_activities" do
+    it "returns 0 when there are no activities" do
+      introvert.total_activities.must_equal 0
+    end
+
+    it "returns the total number of activities" do
+      stub_activities(activities) do
+        introvert.total_activities.must_equal activities.size
+      end
+    end
+  end
+
+  describe "#elapsed_days" do
+    it "return 0 elapsed days when there are no activities" do
+      introvert.elapsed_days.must_equal 0
+    end
+
+    it "returns the number of days between the first and last activity" do
+      stub_activities(activities) do
+        introvert.elapsed_days.must_equal 1
       end
     end
   end

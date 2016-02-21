@@ -1,4 +1,4 @@
-require_relative "helper"
+require "./test/helper"
 
 describe Friends::Activity do
   let(:date) { Date.today }
@@ -75,13 +75,17 @@ describe Friends::Activity do
   describe "#highlight_friends" do
     # Add helpers to set internal states for friends and activities.
     def stub_friends(val)
+      old_val = introvert.instance_variable_get(:@friends)
       introvert.instance_variable_set(:@friends, val)
       yield
+      introvert.instance_variable_set(:@friends, old_val)
     end
 
     def stub_activities(val)
+      old_val = introvert.instance_variable_get(:@activities)
       introvert.instance_variable_set(:@activities, val)
       yield
+      introvert.instance_variable_set(:@activities, old_val)
     end
 
     let(:friends) { [friend1, friend2] }
@@ -131,6 +135,54 @@ describe Friends::Activity do
       end
     end
 
+    describe "when one name ends another after a hyphen" do
+      let(:friend1) { Friends::Friend.new(name: "Mary-Kate Olsen") }
+      let(:friend2) { Friends::Friend.new(name: "Kate Winslet") }
+      let(:description) { "Shopping with Mary-Kate." }
+
+      it "gives precedence to the larger name" do
+        # Make sure "Kate" is a closer friend than "Mary-Kate" so we know our
+        # test result isn't due to chance.
+        friend1.n_activities = 0
+        friend2.n_activities = 10
+
+        subject
+        activity.description.must_equal "Shopping with **Mary-Kate Olsen**."
+      end
+    end
+
+    describe "when one name preceeds another before a hyphen" do
+      let(:friend1) { Friends::Friend.new(name: "Mary-Kate Olsen") }
+      let(:friend2) { Friends::Friend.new(name: "Mary Poppins") }
+      let(:description) { "Shopping with Mary-Kate." }
+
+      it "gives precedence to the larger name" do
+        # Make sure "Kate" is a closer friend than "Mary-Kate" so we know our
+        # test result isn't due to chance.
+        friend1.n_activities = 0
+        friend2.n_activities = 10
+
+        subject
+        activity.description.must_equal "Shopping with **Mary-Kate Olsen**."
+      end
+    end
+
+    describe "when one name is contained within another via a hyphen" do
+      let(:friend1) { Friends::Friend.new(name: "Mary-Jo-Kate Olsen") }
+      let(:friend2) { Friends::Friend.new(name: "Jo Stafford") }
+      let(:description) { "Shopping with Mary-Jo-Kate." }
+
+      it "gives precedence to the larger name" do
+        # Make sure "Kate" is a closer friend than "Mary-Kate" so we know our
+        # test result isn't due to chance.
+        friend1.n_activities = 0
+        friend2.n_activities = 10
+
+        subject
+        activity.description.must_equal "Shopping with **Mary-Jo-Kate Olsen**."
+      end
+    end
+
     describe "when name is at end of word" do
       let(:description) { "Field trip to the JimJohn Co." }
       it "does not match a friend" do
@@ -167,6 +219,16 @@ describe Friends::Activity do
         # Note: for now we can't guarantee that "Elizabeth Cady Stanton**" won't
         # match, because the Elizabeth isn't surrounded by asterisks.
         activity.description.must_equal "Dinner with Elizabeth**."
+      end
+    end
+
+    describe "when a friend's name is mentioned multiple times" do
+      let(:description) { "Dinner with Elizabeth.  Elizabeth made us pasta." }
+      it "highlights all occurrences of the friend's name" do
+        subject
+        activity.description.
+          must_equal "Dinner with **Elizabeth Cady Stanton**."\
+                     "  **Elizabeth Cady Stanton** made us pasta."
       end
     end
 
@@ -282,6 +344,36 @@ describe Friends::Activity do
       past_act = Friends::Activity.new(date_s: yesterday, description: "Dummy")
       future_act = Friends::Activity.new(date_s: tomorrow, description: "Dummy")
       [past_act, future_act].sort.must_equal [future_act, past_act]
+    end
+  end
+
+  describe "#update_name" do
+    let(:description) { "Lunch with **John Candy**." }
+    subject do
+      activity.update_name(old_name: "John Candy", new_name: "John Cleese")
+    end
+
+    it "renames the given friend in the description" do
+      subject.must_equal "Lunch with **John Cleese**."
+    end
+
+    describe "when the description contains a fragment of the old name" do
+      let(:description) { "Lunch with **John Candy** at Johnny's Diner." }
+
+      it "only replaces the name" do
+        subject.must_equal "Lunch with **John Cleese** at Johnny's Diner."
+      end
+    end
+
+    describe "when the description contains the complete old name" do
+      let(:description) { "Coffee with **John** at John's Studio." }
+      subject do
+        activity.update_name(old_name: "John", new_name: "Joe")
+      end
+
+      it "only replaces the actual name" do
+        subject.must_equal "Coffee with **Joe** at John's Studio."
+      end
     end
   end
 end

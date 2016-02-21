@@ -3,11 +3,12 @@
 # Todo:
 # - Split out serialization into separate repository.
 # - Add auto check for updates.
-# - Allow friends to have nicknames.
 # - Allow easy editing of most recent entry.
 
 require "gli"
 require "paint"
+require "readline"
+require "semverse"
 
 require "friends/introvert"
 require "friends/version"
@@ -23,24 +24,28 @@ subcommand_option_handling :normal
 arguments :strict
 
 switch [:quiet],
-  negatable: false,
-  desc: "Quiet output messages"
+       negatable: false,
+       desc: "Quiet output messages"
 
 flag [:filename],
-  arg_name: "FILENAME",
-  default_value: "./friends.md",
-  desc: "Set the location of the friends file"
+     arg_name: "FILENAME",
+     default_value: "./friends.md",
+     desc: "Set the location of the friends file"
 
-switch [:clean],
-  negatable: false,
-  desc: "Force a clean write of the friends file"
+switch [:debug],
+       negatable: false,
+       desc: "Debug error messages with a full backtrace"
 
+desc "Updates the `friends` program"
 command :update do |update|
   update.action do
     search = `gem search friends`
+    # rubocop:disable Lint/AssignmentInCondition
     if match = search.match(/^friends\s\(([^\)]+)\)$/)
+      # rubocop:enable Lint/AssignmentInCondition
       remote_version = match[1]
-      if remote_version.to_r > Friends::VERSION.to_r
+      if Semverse::Version.coerce(remote_version) >
+         Semverse::Version.coerce(Friends::VERSION)
         `gem update friends && gem cleanup friends`
         if $?.success?
           puts Paint["Updated to friends #{remote_version}", :bold, :green]
@@ -68,9 +73,9 @@ command :list do |list|
   list.desc "List favorite friends"
   list.command :favorites do |list_favorites|
     list_favorites.flag [:limit],
-      arg_name: "NUMBER",
-      default_value: 10,
-      desc: "The number of friends to return"
+                        arg_name: "NUMBER",
+                        default_value: 10,
+                        desc: "The number of friends to return"
 
     list_favorites.action do |_, options|
       limit = options[:limit].to_i
@@ -92,13 +97,13 @@ command :list do |list|
   list.desc "Lists all activities"
   list.command :activities do |list_activities|
     list_activities.flag [:limit],
-      arg_name: "NUMBER",
-      default_value: 10,
-      desc: "The number of activities to return"
+                         arg_name: "NUMBER",
+                         default_value: 10,
+                         desc: "The number of activities to return"
 
     list_activities.flag [:with],
-      arg_name: "NAME",
-      desc: "List only activities involving the given friend"
+                         arg_name: "NAME",
+                         desc: "List only activities involving the given friend"
 
     list_activities.action do |_, options|
       limit = options[:limit].to_i
@@ -115,6 +120,7 @@ command :add do |add|
     add_friend.action do |_, _, args|
       friend = @introvert.add_friend(name: args.first)
       @message = "Friend added: \"#{friend.name}\""
+      @dirty = true # Mark the file for cleaning.
     end
   end
 
@@ -123,12 +129,43 @@ command :add do |add|
   add.command :activity do |add_activity|
     add_activity.action do |_, _, args|
       activity = @introvert.add_activity(serialization: args.first)
+
+      # If there's no description, prompt the user for one.
+      if !activity.description
+        activity.description = Readline.readline(activity.display_text)
+        activity.highlight_friends(introvert: @introvert)
+      end
+
       @message = "Activity added: \"#{activity.display_text}\""
+      @dirty = true # Mark the file for cleaning.
+    end
+  end
+
+  add.desc "Adds a nickname to a friend"
+  add.arg_name "NAME NICKNAME"
+  add.command :nickname do |add_nickname|
+    add_nickname.action do |_, _, args|
+      friend = @introvert.add_nickname(name: args.first, nickname: args[1])
+      @message = "Nickname added: \"#{friend}\""
+      @dirty = true # Mark the file for cleaning.
     end
   end
 end
 
-desc "Graph"
+desc "Remove a nickname"
+command :remove do |remove|
+  remove.desc "Removes a nickname from a friend"
+  remove.arg_name "NAME NICKNAME"
+  remove.command :nickname do |remove_nickname|
+    remove_nickname.action do |_, _, args|
+      friend = @introvert.remove_nickname(name: args.first, nickname: args[1])
+      @message = "Nickname removed: \"#{friend}\""
+      @dirty = true # Mark the file for cleaning.
+    end
+  end
+end
+
+desc "Graph a friend's relationship over time"
 arg_name "NAME"
 command :graph do |graph|
   graph.action do |_, _, args|
@@ -137,7 +174,7 @@ command :graph do |graph|
 
     colors = (0...(6 * 7)).map do |n|
       n *= 1.0 / 6
-      r  = (3 * Math.sin(n           ) + 3).to_i
+      r  = (3 * Math.sin(n) + 3).to_i
       g  = (3 * Math.sin(n + 2 * PI_3) + 3).to_i
       b  = (3 * Math.sin(n + 4 * PI_3) + 3).to_i
 
@@ -153,29 +190,56 @@ command :graph do |graph|
   end
 end
 
-desc "Suggest"
+desc "Suggest friends to do activities with"
 command :suggest do |suggest|
   suggest.action do
     suggestions = @introvert.suggest
 
     puts "Distant friend: "\
-      "#{Paint[suggestions[:distant].sample, :bold, :magenta]}"
+      "#{Paint[suggestions[:distant].sample || 'None found', :bold, :magenta]}"
     puts "Moderate friend: "\
-      "#{Paint[suggestions[:moderate].sample, :bold, :magenta]}"
-    puts "Close friend: #{Paint[suggestions[:close].sample, :bold, :magenta]}"
+      "#{Paint[suggestions[:moderate].sample || 'None found', :bold, :magenta]}"
+    puts "Close friend: "\
+      "#{Paint[suggestions[:close].sample || 'None found', :bold, :magenta]}"
   end
 end
 
 desc "Cleans your friends.md file"
 command :clean do |clean|
   clean.action do
-    filename = @introvert.clean
-    @message = "File cleaned: \"#{filename}\""
+    @clean_command = true
+    @dirty = true # Mark the file for cleaning.
+  end
+end
+
+desc "List all stats"
+command :stats do |stats|
+  stats.action do
+    puts "Total activities: #{@introvert.total_activities}"
+    puts "Total friends: #{@introvert.total_friends}"
+    days = @introvert.elapsed_days
+    puts "Total time elapsed: #{days} day#{'s' if days != 1}"
+  end
+end
+
+desc "Renames a friend"
+command :rename do |rename|
+  rename.desc "Renames a friend"
+  rename.arg_name "NAME NEW_NAME"
+  rename.command :friend do |rename_friend|
+    rename_friend.action do |_, _, args|
+      friend = @introvert.rename_friend(old_name: args.first,
+                                        new_name: args[1])
+      @message = "Name changed: \"#{friend}\""
+      @dirty = true # Mark the file for cleaning.
+    end
   end
 end
 
 # Before each command, clean up all arguments and create the global Introvert.
 pre do |global_options, _, options|
+  @debug_mode = global_options[:debug]
+
   final_options = global_options.merge!(options).select do |key, _|
     [:filename].include? key
   end
@@ -185,11 +249,12 @@ pre do |global_options, _, options|
 end
 
 post do |global_options|
-  # After each command, clean if requested with the --clean flag.
-  if global_options[:clean]
-    filename = @introvert.clean
-    @message = "File cleaned: \"#{filename}\""
-  end
+  # After each command, clean the file if we have modifications to make.
+  filename = @introvert.clean if @dirty
+
+  # This is a special-case piece of code that lets us print a message that
+  # includes the filename when `friends clean` is called.
+  @message = "File cleaned: \"#{filename}\"" if @clean_command
 
   # Print the output message (if there is one) unless --quiet is passed.
   puts @message unless @message.nil? || global_options[:quiet]
@@ -197,7 +262,11 @@ end
 
 # If an error is raised, print the message to STDERR and exit the program.
 on_error do |error|
-  abort "Error: #{error}"
+  if @debug_mode
+    raise error
+  else
+    abort "Error: #{error}"
+  end
 end
 
 # Run the program and return the exit code corresponding to its success.

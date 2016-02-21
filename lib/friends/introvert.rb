@@ -1,8 +1,7 @@
+# frozen_string_literal: true
 # Introvert is the internal handler for the friends script. It is designed to be
 # able to be used directly within another Ruby program, without needing to call
 # the command-line script explicitly.
-
-require "readline"
 
 require "friends/activity"
 require "friends/friend"
@@ -10,15 +9,14 @@ require "friends/friends_error"
 
 module Friends
   class Introvert
-    DEFAULT_FILENAME = "./friends.md"
-    ACTIVITIES_HEADER = "### Activities:"
-    FRIENDS_HEADER = "### Friends:"
-    GRAPH_DATE_FORMAT = "%b %Y" # Used as the param for date.strftime().
+    DEFAULT_FILENAME = "./friends.md".freeze
+    ACTIVITIES_HEADER = "### Activities:".freeze
+    FRIENDS_HEADER = "### Friends:".freeze
+    GRAPH_DATE_FORMAT = "%b %Y".freeze # Used as the param for date.strftime().
 
     # @param filename [String] the name of the friends Markdown file
     def initialize(filename: DEFAULT_FILENAME)
       @filename = filename
-      @cleaned_file = false # Switches to true when the file is cleaned.
 
       # Read in the input file. It's easier to do this now and optimize later
       # than try to overly be clever about what we read and write.
@@ -27,10 +25,6 @@ module Friends
 
     # Write out the friends file with cleaned/sorted data.
     def clean
-      # Short-circuit if we've already cleaned the file so we don't write it
-      # twice.
-      return @filename if @cleaned_file
-
       descriptions = @activities.sort.map(&:serialize)
       names = @friends.sort.map(&:serialize)
 
@@ -42,8 +36,6 @@ module Friends
         file.puts(FRIENDS_HEADER)
         names.each { |name| file.puts(name) }
       end
-
-      @cleaned_file = true
 
       @filename
     end
@@ -64,7 +56,6 @@ module Friends
       end
 
       @friends << friend
-      clean # Write a cleaned file.
 
       friend # Return the added friend.
     end
@@ -79,14 +70,47 @@ module Friends
         raise FriendsError, e
       end
 
-      # If there's no description, prompt the user for one.
-      activity.description ||= Readline.readline(activity.display_text)
-
-      activity.highlight_friends(introvert: self)
+      activity.highlight_friends(introvert: self) if activity.description
       @activities.unshift(activity)
-      clean # Write a cleaned file.
 
       activity # Return the added activity.
+    end
+
+    # Rename an existing added friend.
+    # @param old_name [String] the name of the friend
+    # @param new_name [String] the new name of the friend
+    # @raise [FriendsError] if 0 of 2+ friends match the given name
+    # @return [Friend] the existing friend
+    def rename_friend(old_name:, new_name:)
+      friend = friend_with_name_in(old_name.strip)
+      @activities.each do |activity|
+        activity.update_name(old_name: friend.name, new_name: new_name.strip)
+      end
+      friend.rename(new_name.strip)
+      friend
+    end
+
+    # Add a nickname to an existing friend and write out the new friends file.
+    # @param name [String] the name of the friend
+    # @param nickname [String] the nickname to add to the friend
+    # @raise [FriendsError] if 0 of 2+ friends match the given name
+    # @return [Friend] the existing friend
+    def add_nickname(name:, nickname:)
+      friend = friend_with_name_in(name)
+      friend.add_nickname(nickname.strip)
+      friend
+    end
+
+    # Remove a nickname from an existing friend and write out the new friends
+    #   file.
+    # @param name [String] the name of the friend
+    # @param nickname [String] the nickname to remove from the friend
+    # @raise [FriendsError] if 0 of 2+ friends match the given name
+    # @return [Friend] the existing friend
+    def remove_nickname(name:, nickname:)
+      friend = friend_with_name_in(name)
+      friend.remove_nickname(nickname.strip)
+      friend
     end
 
     # List all friend names in the friends file.
@@ -127,6 +151,7 @@ module Friends
     # @param with [String] the name of a friend to filter by, or nil for
     #   unfiltered
     # @return [Array] a list of all activity text values
+    # @raise [FriendsError] if 0 of 2+ friends match the given `with` text
     def list_activities(limit:, with:)
       acts = @activities
 
@@ -153,6 +178,7 @@ module Friends
     #   The keys of the hash are all of the months (inclusive) between the first
     #   and last month in which activities for the given friend have been
     #   recorded.
+    # @raise [FriendsError] if 0 of 2+ friends match the given name
     def graph(name:)
       friend = friend_with_name_in(name) # Find the friend by name.
 
@@ -188,8 +214,12 @@ module Friends
 
       output = Hash.new { |h, k| h[k] = [] }
 
+      # Set initial value in case there are no friends and the while loop is
+      # never entered.
+      output[:distant] = []
+
       # First, get not-so-good friends.
-      while sorted_friends.first.n_activities < 2
+      while !sorted_friends.empty? && sorted_friends.first.n_activities < 2
         output[:distant] << sorted_friends.shift.name
       end
 
@@ -221,12 +251,15 @@ module Friends
       end
     end
 
-    # @return [Hash] mapping each friend to a list of all possible regexes for
-    #   that friend's name
-    def friend_regex_map
-      @friends.each_with_object({}) do |friend, hash|
-        hash[friend] = friend.regexes_for_name
-      end
+    # @return [Hash] of the form { /regex/ => [list of friends matching regex] }
+    #   This hash is sorted (because Ruby's hashes are ordered) by decreasing
+    #   regex key length, so the key /Jacob Evelyn/ appears before /Jacob/.
+    def regex_friend_map
+      @friends.each_with_object(Hash.new { |h, k| h[k] = [] }) do |friend, hash|
+        friend.regexes_for_name.each do |regex|
+          hash[regex] << friend
+        end
+      end.sort_by { |k, _| -k.to_s.size }.to_h
     end
 
     # Sets the likelihood_score field on each friend in `possible_matches`. This
@@ -245,13 +278,13 @@ module Friends
     #   description, for instance, is "John Deere" vs. "John Doe"
     def set_likelihood_score!(matches:, possible_matches:)
       combinations = (matches + possible_matches.flatten).
-        combination(2).
-        reject do |friend1, friend2|
-          (matches & [friend1, friend2]).size == 2 ||
-          possible_matches.any? do |group|
-            (group & [friend1, friend2]).size == 2
-          end
-        end
+                     combination(2).
+                     reject do |friend1, friend2|
+                       (matches & [friend1, friend2]).size == 2 ||
+                       possible_matches.any? do |group|
+                         (group & [friend1, friend2]).size == 2
+                       end
+                     end
 
       @activities.each do |activity|
         names = activity.friend_names
@@ -262,6 +295,24 @@ module Friends
           end
         end
       end
+    end
+
+    # @return [Integer] the total number of friends
+    def total_friends
+      @friends.size
+    end
+
+    # @return [Integer] the total number of activities
+    def total_activities
+      @activities.size
+    end
+
+    # @return [Integer] the number of days elapsed between
+    #   the first and last activity
+    def elapsed_days
+      return 0 if @activities.size < 2
+      sorted_activities = @activities.sort
+      (sorted_activities.first.date - sorted_activities.last.date).to_i
     end
 
     private

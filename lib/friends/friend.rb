@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # Friend represents a friend. You know, a real-life friend!
 
 require "friends/serializable"
@@ -6,11 +7,15 @@ module Friends
   class Friend
     extend Serializable
 
-    SERIALIZATION_PREFIX = "- "
+    SERIALIZATION_PREFIX = "- ".freeze
+    NICKNAME_PREFIX = "a.k.a. ".freeze
 
     # @return [Regexp] the regex for capturing groups in deserialization
     def self.deserialization_regex
-      /(#{SERIALIZATION_PREFIX})?(?<name>.+)/
+      # Note: this regex must be on one line because whitespace is important
+      # rubocop:disable Metrics/LineLength
+      /(#{SERIALIZATION_PREFIX})?(?<name>[^\(]+)(\((?<nickname_str>#{NICKNAME_PREFIX}.+)\))?/
+      # rubocop:enable Metrics/LineLength
     end
 
     # @return [Regexp] the string of what we expected during deserialization
@@ -19,15 +24,50 @@ module Friends
     end
 
     # @param name [String] the name of the friend
-    def initialize(name:)
-      @name = name
+    def initialize(name:, nickname_str: nil)
+      @name = name.strip
+      @nicknames = nickname_str &&
+                   nickname_str.split(NICKNAME_PREFIX)[1..-1].map(&:strip) ||
+                   []
     end
 
     attr_accessor :name
 
     # @return [String] the file serialization text for the friend
     def serialize
-      "#{SERIALIZATION_PREFIX}#{name}"
+      "#{SERIALIZATION_PREFIX}#{self}"
+    end
+
+    # @return [String] a string representing the friend's name and nicknames
+    def to_s
+      return name if @nicknames.empty?
+
+      nickname_str = @nicknames.map { |n| "#{NICKNAME_PREFIX}#{n}" }.join(" ")
+      "#{name} (#{nickname_str})"
+    end
+
+    # Adds a nickname, avoiding duplicates and stripping surrounding whitespace.
+    # @param nickname [String] the nickname to add
+    def add_nickname(nickname)
+      @nicknames << nickname
+      @nicknames.uniq!
+    end
+
+    # Renames a friend, avoiding duplicates and stripping surrounding
+    # whitespace.
+    # @param new_name [String] the friend's new name
+    def rename(new_name)
+      @name = new_name
+    end
+
+    # @param nickname [String] the nickname to remove
+    # @return [Boolean] true if the nickname was present, false otherwise
+    def remove_nickname(nickname)
+      unless @nicknames.include? nickname
+        raise FriendsError, "Nickname \"#{nickname}\" not found for \"#{name}\""
+      end
+
+      @nicknames.delete(nickname)
     end
 
     # The number of activities this friend is in. This is for internal use only
@@ -47,13 +87,12 @@ module Friends
       @likelihood_score || 0
     end
 
-    # @return [Array] a list of all regexes to match the name in a string, with
-    #   longer regexes first
-    #   Note: for now we only match on full names or first names
+    # @return [Array] a list of all regexes to match the name in a string
     #   Example: [
     #     /Jacob\s+Morris\s+Evelyn/,
     #     /Jacob/
     #   ]
+    # NOTE: For now we only match on full names or first names.
     def regexes_for_name
       # We generously allow any amount of whitespace between parts of a name.
       splitter = "\\s+"
@@ -64,6 +103,10 @@ module Friends
 
       # We don't want to match names that are directly touching double asterisks
       # as these are treated as sacred by our program.
+      # NOTE: Technically we don't need this check here, since we perform a more
+      # complex asterisk check in the Activity#description_matches method, but
+      # this class shouldn't need to know about the internal implementation of
+      # another class.
       no_leading_asterisks = "(?<!\\*\\*)"
       no_ending_asterisks = "(?!\\*\\*)"
 
@@ -74,7 +117,7 @@ module Friends
       # Create the list of regexes and return it.
       chunks = name.split(Regexp.new(splitter))
 
-      [chunks, [chunks.first]].map do |words|
+      [chunks, [chunks.first], *@nicknames.map { |n| [n] }].map do |words|
         Regexp.new(
           no_leading_backslash +
           no_leading_asterisks +

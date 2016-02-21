@@ -1,4 +1,4 @@
-require_relative "helper"
+require "./test/helper"
 
 describe Friends::Friend do
   let(:friend_name) { "Jacob Evelyn" }
@@ -30,6 +30,15 @@ describe Friends::Friend do
     it { subject.name.must_equal friend_name }
   end
 
+  describe "#rename" do
+    subject { friend }
+
+    it "renames the friend" do
+      friend.rename("Ada Lovelace")
+      subject.name.must_equal "Ada Lovelace"
+    end
+  end
+
   describe "#serialize" do
     subject { friend.serialize }
 
@@ -37,6 +46,45 @@ describe Friends::Friend do
       subject.must_equal(
         "#{Friends::Friend::SERIALIZATION_PREFIX}#{friend_name}"
       )
+    end
+  end
+
+  describe "#add_nickname" do
+    subject { friend.add_nickname("The Dude") }
+
+    it "adds the nickname" do
+      subject
+      friend.instance_variable_get(:@nicknames).must_include("The Dude")
+    end
+
+    it "does not keep duplicates" do
+      # Add the same nickname twice. Do not use `subject` because it's memoized.
+      friend.add_nickname("The Dude")
+      friend.add_nickname("The Dude")
+
+      friend.instance_variable_get(:@nicknames).must_equal ["The Dude"]
+    end
+  end
+
+  describe "#remove_nickname" do
+    subject { friend.remove_nickname("Jake") }
+
+    describe "when the nickname is present" do
+      let(:friend) do
+        Friends::Friend.new(name: friend_name, nickname_str: "a.k.a. Jake")
+      end
+
+      it "removes the nickname" do
+        friend.instance_variable_get(:@nicknames).must_equal ["Jake"]
+        subject
+        friend.instance_variable_get(:@nicknames).must_equal []
+      end
+    end
+
+    describe "when the nickname is not present" do
+      it "raises an error if the nickname is not found" do
+        proc { subject }.must_raise Friends::FriendsError
+      end
     end
   end
 
